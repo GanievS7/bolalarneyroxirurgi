@@ -1,0 +1,31 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "",
+  "buildCommand": "node scripts/build-pages.mjs",
+  "outputDirectory": "web",
+  "cleanUrls": false,
+  "redirects": [
+    { "source": "/ru", "destination": "/ru/", "permanent": true },
+    { "source": "/konsultatsiya", "destination": "/konsultatsiya/", "permanent": true },
+    { "source": "/ru/konsultatsiya", "destination": "/ru/konsultatsiya/", "permanent": true }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
+    },
+    {
+      "source": "/(.*)\\.(js|css)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ]
+}

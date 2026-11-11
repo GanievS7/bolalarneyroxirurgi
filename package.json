@@ -1,0 +1,11 @@
+{
+  "name": "xumoyunmirzo-neurosurgeon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "validate": "node scripts/validate-artifact.mjs",
+    "test": "node --test tests/booking.test.mjs tests/vercel.test.mjs",
+    "vercel-build": "node scripts/build-pages.mjs"
+  }
+}

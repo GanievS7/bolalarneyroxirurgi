@@ -1,0 +1,16 @@
+# Vercel'ga yuklanmaydigan papkalar (sayt uchun kerak emas)
+dist
+worker
+brand
+tools
+specs
+.specify
+.claude
+.openai
+tests
+node_modules
+.env
+.env.*
+*.zip
+QA_REPORT.md
+SOURCE_NOTES.md
