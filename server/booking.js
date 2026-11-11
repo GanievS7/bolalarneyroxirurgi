@@ -102,8 +102,31 @@ function json(data, status = 200) {
   return Response.json(data, {status, headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 }
 
+// TELEGRAM_CHAT_ID: bitta yoki vergul bilan ajratilgan bir nechta ID (masalan "111,222"), ko'pi bilan 5 ta.
+function chatIds(env) {
+  return String(env.TELEGRAM_CHAT_ID || '').split(/[\s,;]+/).filter(Boolean);
+}
+
 function configured(env) {
-  return typeof env.TELEGRAM_BOT_TOKEN === 'string' && /^\d+:[\w-]+$/.test(env.TELEGRAM_BOT_TOKEN) && /^-?\d+$/.test(env.TELEGRAM_CHAT_ID || '');
+  const ids = chatIds(env);
+  return typeof env.TELEGRAM_BOT_TOKEN === 'string' && /^\d+:[\w-]+$/.test(env.TELEGRAM_BOT_TOKEN)
+    && ids.length > 0 && ids.length <= 5 && ids.every(id => /^-?\d+$/.test(id));
+}
+
+async function sendTelegram(env, chatId, body) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{
+      method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(12000),
+      body:JSON.stringify({chat_id:chatId,text:body,link_preview_options:{is_disabled:true}})
+    });
+    let result;
+    try { result=await response.json(); } catch { result=null; }
+    if (response.ok && result?.ok === true && Number.isInteger(result.result?.message_id)) return 'sent';
+    // A confirmed Telegram rejection can be retried; an unparseable response cannot.
+    return result?.ok === false ? 'failed' : 'unknown';
+  } catch {
+    return 'network';
+  }
 }
 
 async function key(secret) {
@@ -282,28 +305,19 @@ async function deliver(id, data, env, request) {
   const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('x-real-ip') || (request.headers.get('x-forwarded-for') || '').split(',')[0].trim() || request.headers.get('oai-authenticated-user-id') || 'unidentified';
   if (!await limit(ip,env.TELEGRAM_BOT_TOKEN)) return json({ok:false,code:'rate_limited',message:t.rate},429);
   await cacheWrite('delivery',id,{status:'pending',receipt},1800);
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`,{
-      method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(12000),
-      body:JSON.stringify({chat_id:env.TELEGRAM_CHAT_ID,text:message(data,receipt),link_preview_options:{is_disabled:true}})
-    });
-    let result;
-    try { result=await response.json(); } catch { result=null; }
-    if (response.ok && result?.ok === true && Number.isInteger(result.result?.message_id)) {
-      await cacheWrite('delivery',id,{status:'sent',receipt},1800);
-      return json({ok:true,receipt});
-    }
-    // A confirmed Telegram rejection can be retried; an unparseable response cannot.
-    if (result?.ok === false) {
-      await cacheWrite('delivery',id,{status:'failed',receipt},60);
-      return json({ok:false,code:'delivery_failed',message:t.failed},502);
-    }
-    await cacheWrite('delivery',id,{status:'unknown',receipt},1800);
-    return json({ok:false,code:'delivery_unknown',message:t.unknown},504);
-  } catch {
-    await cacheWrite('delivery',id,{status:'unknown',receipt},1800);
-    return json({ok:false,code:'delivery_unknown',message:t.network},504);
+  const body = message(data,receipt);
+  // Har bir chat'ga yuboriladi; kamida bittasiga yetib borsa — ariza qabul qilingan.
+  const results = await Promise.all(chatIds(env).map(chatId => sendTelegram(env,chatId,body)));
+  if (results.includes('sent')) {
+    await cacheWrite('delivery',id,{status:'sent',receipt},1800);
+    return json({ok:true,receipt});
   }
+  if (results.every(r => r === 'failed')) {
+    await cacheWrite('delivery',id,{status:'failed',receipt},60);
+    return json({ok:false,code:'delivery_failed',message:t.failed},502);
+  }
+  await cacheWrite('delivery',id,{status:'unknown',receipt},1800);
+  return json({ok:false,code:'delivery_unknown',message:results.includes('network') ? t.network : t.unknown},504);
 }
 
 export async function handleBooking(request, env) {
